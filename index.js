@@ -60,17 +60,26 @@ function sleep(ms) {
 async function initNative() {
   const { default: koffi } = await import('koffi');
 
-  // Core types.
-  koffi.struct('CGPoint', { x: 'double', y: 'double' });
-  koffi.struct('CGSize', { width: 'double', height: 'double' });
-  koffi.struct('CGRect', { origin: 'CGPoint', size: 'CGSize' });
+  // Core types, registered idempotently: koffi's type registry is global and
+  // survives plugin hot-reloads, so re-registering a name after a reload would
+  // throw "Duplicate type name". Reuse an existing type when one is present.
+  function structType(name, fields) {
+    try { return koffi.type(name); } catch { return koffi.struct(name, fields); }
+  }
+  function pointerType(name, target) {
+    try { return koffi.type(name); } catch { return koffi.pointer(name, target); }
+  }
 
-  const CFStringRef = koffi.pointer('CFStringRef', koffi.opaque());
-  const CFNumberRef = koffi.pointer('CFNumberRef', koffi.opaque());
-  const CFDictionaryRef = koffi.pointer('CFDictionaryRef', koffi.opaque());
-  const CFArrayRef = koffi.pointer('CFArrayRef', koffi.opaque());
-  const CGEventRef = koffi.pointer('CGEventRef', koffi.opaque());
-  const CGEventSourceRef = koffi.pointer('CGEventSourceRef', koffi.opaque());
+  structType('CGPoint', { x: 'double', y: 'double' });
+  structType('CGSize', { width: 'double', height: 'double' });
+  structType('CGRect', { origin: 'CGPoint', size: 'CGSize' });
+
+  const CFStringRef = pointerType('CFStringRef', koffi.opaque());
+  const CFNumberRef = pointerType('CFNumberRef', koffi.opaque());
+  const CFDictionaryRef = pointerType('CFDictionaryRef', koffi.opaque());
+  const CFArrayRef = pointerType('CFArrayRef', koffi.opaque());
+  const CGEventRef = pointerType('CGEventRef', koffi.opaque());
+  const CGEventSourceRef = pointerType('CGEventSourceRef', koffi.opaque());
 
   const cg = koffi.load('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics');
   const cf = koffi.load('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation');
