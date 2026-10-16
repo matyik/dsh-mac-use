@@ -29,6 +29,9 @@
   "engines": {
     "node": ">=24"
   },
+  "scripts": {
+    "prepublishOnly": "node --check index.js"
+  },
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",

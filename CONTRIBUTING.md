@@ -41,8 +41,18 @@ low — but a couple of conventions keep things moving cleanly.
 ## Releasing
 
 Releases are cut automatically. Bump `version` in `package.json` (SemVer), merge to
-`main`, and the CI workflow tags `v<version>` and publishes a GitHub Release with
-auto-generated notes. Keep the [CHANGELOG](CHANGELOG.md) updated in the same PR.
+`main`, and the CI workflow tags `v<version>`, publishes a GitHub Release with
+auto-generated notes, and publishes to npm. Keep the [CHANGELOG](CHANGELOG.md) updated in
+the same PR.
+
+Publishing uses npm **trusted publishing (OIDC)** — no long-lived token. One-time setup:
+
+1. Publish the package once from your machine (`npm login && npm publish`) to create it.
+2. On npm, open the package → **Settings → Access → Trusted Publishing**, and add the
+   publisher: owner `matyik`, repo `dsh-mac-use`, workflow `release.yml`, branch `main`,
+   registry `https://registry.npmjs.org`.
+
+After that, version bumps publish automatically.
 
 ## Code of conduct
 

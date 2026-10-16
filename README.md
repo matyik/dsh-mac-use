@@ -8,6 +8,7 @@ Let an agent *see* the screen, *drive* the mouse and keyboard, and *open* apps a
 the same observe → act → verify loop as Claude's `computer` tool or Codex computer-use,
 shipped as a single DeepSeek Harness bundle.
 
+[![npm](https://img.shields.io/npm/v/dsh-mac-use)](https://www.npmjs.com/package/dsh-mac-use)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20(arm64)-lightgrey)](#)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.2.0--rc.2-4b32c3)](#)
@@ -64,12 +65,22 @@ Missing a permission? The relevant tool fails with a message naming the exact se
 
 ## Install
 
-Install through the built-in Plugin Manager — no shell commands, no manual profile edits:
+Install through the built-in Plugin Manager — no shell commands, no manual profile edits.
 
-- **Plugin Manager (recommended):** Web sidebar → **Plugins → Install bundle**, enter the
-  package as a git URL, an npm spec, or a local directory (e.g.
-  `github:matyik/dsh-mac-use`).
-- **`plugin_manager` tool:** `install_bundle` with the same target.
+**From npm (recommended):**
+
+```
+dsh-mac-use
+```
+
+**From git:**
+
+```
+github:matyik/dsh-mac-use
+```
+
+In the Web sidebar: **Plugins → Install bundle**, enter either spec above (or a local
+directory). The `plugin_manager` tool's `install_bundle` accepts the same targets.
 
 The only dependency is `koffi@3.1.1` (the version the Desktop runtime ships). It bundles a
 prebuilt `darwin-arm64` binary and its install script is a fast prebuild check — no
