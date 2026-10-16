@@ -1,0 +1,6 @@
+# Host-only bundle: registers the computer-use tool plugin.
+# Insert order places the plugin after the tool runtime (`tools`).
+- insert:
+    - id: tool-mac-use
+      name: 'dsh-mac-use'
+      inject: [tools]

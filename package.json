@@ -1,0 +1,57 @@
+{
+  "name": "dsh-mac-use",
+  "version": "1.0.0",
+  "description": "Computer-use for DeepSeek Harness on macOS: let an agent see the screen, drive the mouse and keyboard, and open apps and URLs — no helper binary, permissions come from the Harness app itself.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "computer-use",
+    "agent",
+    "automation",
+    "macos",
+    "plugin",
+    "screen",
+    "mouse",
+    "keyboard"
+  ],
+  "license": "MIT",
+  "author": "matyik",
+  "type": "module",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matyik/dsh-mac-use.git"
+  },
+  "bugs": {
+    "url": "https://github.com/matyik/dsh-mac-use/issues"
+  },
+  "homepage": "https://github.com/matyik/dsh-mac-use#readme",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "koffi": "3.1.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "~3.18.4"
+  }
+}
