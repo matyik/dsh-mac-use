@@ -4,13 +4,13 @@
 
 **Computer-use for DeepSeek Harness on macOS.**
 
-Let an agent *see* the screen, *drive* the mouse and keyboard, and *open* apps and URLs —
+Let an agent _see_ the screen, _drive_ the mouse and keyboard, and _open_ apps and URLs —
 the same observe → act → verify loop as Claude's `computer` tool or Codex computer-use,
 shipped as a single DeepSeek Harness bundle.
 
 [![npm](https://img.shields.io/npm/v/dsh-mac-use)](https://www.npmjs.com/package/dsh-mac-use)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20(arm64)-lightgrey)](#)
+[![Platform](<https://img.shields.io/badge/platform-macOS%20(arm64)-lightgrey>)](#)
 [![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-0.2.0--rc.2-4b32c3)](#)
 [![Release](https://img.shields.io/github/v/release/matyik/dsh-mac-use?sort=semver)](https://github.com/matyik/dsh-mac-use/releases)
 
@@ -26,24 +26,24 @@ and accessibility grants. `dsh-mac-use` doesn't:
   window inspection call macOS APIs through the `koffi` FFI library (an npm dependency).
 - **Permissions come from the Harness app itself.** Because the plugin runs in the Desktop
   host (a child of the Electron app), macOS checks Screen Recording and Accessibility
-  against *DeepSeek Harness*. Grant those two once — never to a helper.
+  against _DeepSeek Harness_. Grant those two once — never to a helper.
 - **Virtual agent cursor.** Mouse actions don't strand your real pointer: clicks land,
   then your cursor snaps back, while a floating orange dot glides between action points so
   you can watch the agent work — and it disappears when the task is done.
 
 ## Tools
 
-| Tool | What it does |
-| --- | --- |
-| `computer_screenshot` | Capture the screen (main display, a region, a window, or a display) and return the image plus bounds and pixel→point scale. |
-| `computer_screen_info` | Read display geometry (points), cursor position, and the on-screen window list (id, app, title, bounds). |
-| `computer_move` | Move the **agent cursor** to `(x, y)` in global display points (your real pointer is untouched). |
-| `computer_click` | Click at `(x, y)` — left/right/middle, single or double. |
-| `computer_drag` | Drag from `(x1, y1)` to `(x2, y2)`. |
-| `computer_scroll` | Scroll up/down/left/right at a point or the cursor. |
-| `computer_type` | Type arbitrary Unicode text into the focused field. |
-| `computer_key` | Press a key or chord (letters, digits, arrows, return, tab, escape, F-keys, and `cmd`/`shift`/`option`/`control`). |
-| `computer_open` | Open a URL, file, or app via the system `open` command. |
+| Tool                   | What it does                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `computer_screenshot`  | Capture the screen (main display, a region, a window, or a display) and return the image plus bounds and pixel→point scale. |
+| `computer_screen_info` | Read display geometry (points), cursor position, and the on-screen window list (id, app, title, bounds).                    |
+| `computer_move`        | Move the **agent cursor** to `(x, y)` in global display points (your real pointer is untouched).                            |
+| `computer_click`       | Click at `(x, y)` — left/right/middle, single or double.                                                                    |
+| `computer_drag`        | Drag from `(x1, y1)` to `(x2, y2)`.                                                                                         |
+| `computer_scroll`      | Scroll up/down/left/right at a point or the cursor.                                                                         |
+| `computer_type`        | Type arbitrary Unicode text into the focused field.                                                                         |
+| `computer_key`         | Press a key or chord (letters, digits, arrows, return, tab, escape, F-keys, and `cmd`/`shift`/`option`/`control`).          |
+| `computer_open`        | Open a URL, file, or app via the system `open` command.                                                                     |
 
 A system-prompt section teaches the agent the workflow: observe → locate → convert image
 pixels to global points → act → screenshot again to verify.
@@ -101,12 +101,12 @@ y = bounds.y + py / scale
 
 ## Configuration
 
-| Field | Default | Meaning |
-| --- | --- | --- |
-| `virtualCursor` | `true` | Use the virtual agent cursor (click, then restore your pointer) and show the floating dot. Set `false` to leave the pointer where it clicked. |
-| `postDelayMs` | `25` | Delay between press/release events. |
-| `scrollAmount` | `3` | Scroll wheel units per step. |
-| `typeDelayMs` | `0` | Per-character typing delay. |
+| Field           | Default | Meaning                                                                                                                                       |
+| --------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `virtualCursor` | `true`  | Use the virtual agent cursor (click, then restore your pointer) and show the floating dot. Set `false` to leave the pointer where it clicked. |
+| `postDelayMs`   | `25`    | Delay between press/release events.                                                                                                           |
+| `scrollAmount`  | `3`     | Scroll wheel units per step.                                                                                                                  |
+| `typeDelayMs`   | `0`     | Per-character typing delay.                                                                                                                   |
 
 ## Security
 

@@ -18,7 +18,7 @@ low — but a couple of conventions keep things moving cleanly.
 3. Make focused, self-contained changes. One PR, one concern.
 4. Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages:
    `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, etc.
-5. Run `node --check index.js` to make sure the plugin still parses.
+5. Run `npm run check` to lint, verify formatting, and confirm the plugin parses.
 6. Push and open a pull request.
 
 ## Pull requests
@@ -32,7 +32,9 @@ low — but a couple of conventions keep things moving cleanly.
 
 - Plain JavaScript (ESM), no build step. Don't introduce TypeScript or a bundler unless an
   issue explicitly calls for it.
-- Match the existing style: 2-space indent, single quotes, semicolons.
+- Code is formatted with [Prettier](https://prettier.io/) and linted with
+  [ESLint](https://eslint.org/). `npm run format` rewrites to the project style, and
+  `npm run check` runs lint + format + syntax checks.
 - Native calls go through `koffi`. Always test FFI changes in the actual Electron host
   (`ELECTRON_RUN_AS_NODE=1 "DeepSeek Harness" --expose-internals your-test.mjs`), not just
   plain `node` — the two are not equivalent.
