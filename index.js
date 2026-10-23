@@ -372,18 +372,16 @@ async function initNative() {
     msgBool(contentView, sel('setWantsLayer:'), true);
     const layer = msg0(contentView, sel('layer'));
 
-    // Arrow outline in a 48pt square (tip at origin, tail toward bottom-right,
+    // macOS-style pointer outline (tip at origin, tail toward the lower right,
     // top-left origin with y down). Converted to the layer's y-up space below.
     const pts = [
       [0, 0],
-      [0, 48],
-      [12, 34],
-      [22, 48],
-      [36, 34],
-      [48, 48],
-      [48, 10],
-      [34, 22],
-      [48, 0],
+      [0, 41],
+      [12, 31],
+      [19, 48],
+      [26, 45],
+      [18, 28],
+      [32, 28],
     ];
     const path = CGPathCreateMutable();
     CGPathMoveToPoint(path, null, PAD + pts[0][0], PAD + (ARROW - pts[0][1]));
@@ -400,7 +398,7 @@ async function initNative() {
     });
     msgPoint(shape, sel('setPosition:'), { x: SIZE / 2, y: SIZE / 2 });
     msgVoidPtr(shape, sel('setPath:'), path);
-    const fill = CGColorCreateGenericRGB(0.12, 0.5, 1.0, 0.9); // blue
+    const fill = CGColorCreateGenericRGB(0.302, 0.42, 0.996, 0.9); // DeepSeek blue #4D6BFE
     const stroke = CGColorCreateGenericRGB(1.0, 1.0, 1.0, 0.9); // white
     msgVoidPtr(shape, sel('setFillColor:'), fill);
     msgVoidPtr(shape, sel('setStrokeColor:'), stroke);

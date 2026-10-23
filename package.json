@@ -1,6 +1,6 @@
 {
   "name": "dsh-mac-use",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Computer-use for DeepSeek Harness on macOS: let an agent see the screen, drive the mouse and keyboard, and open apps and URLs — no helper binary, permissions come from the Harness app itself.",
   "keywords": [
     "deepseek-harness",
