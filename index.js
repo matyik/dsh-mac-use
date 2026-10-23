@@ -35,7 +35,7 @@ const Config = z.object({
   typeDelayMs: z.number().min(0).max(200).default(0),
   // When true, mouse actions are delivered via the global HID tap (reliable
   // clicks), then the real cursor is restored to where it was, and a floating
-  // "agent cursor" dot is shown at the action point. When false, the system
+  // "agent cursor" arrow is shown at the action point. When false, the system
   // cursor simply moves to each position. Keyboard input always goes to the
   // focused app.
   virtualCursor: z.boolean().default(true),
@@ -94,6 +94,8 @@ async function initNative() {
   const appSvc = koffi.load(
     '/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices',
   );
+  // Load QuartzCore so CAShapeLayer (used for the cursor arrow) is registered.
+  koffi.load('/System/Library/Frameworks/QuartzCore.framework/QuartzCore');
 
   // --- CoreGraphics ---
   const CGMainDisplayID = cg.func('uint32 CGMainDisplayID()');
@@ -128,7 +130,17 @@ async function initNative() {
   );
   const CGPreflightScreenCaptureAccess = cg.func('bool CGPreflightScreenCaptureAccess()');
 
-  // --- Objective-C runtime (for the floating "agent cursor" dot) ---
+  // CoreGraphics mutable paths (for drawing the agent-cursor arrow).
+  const CGPathCreateMutable = cg.func('void * CGPathCreateMutable()');
+  const CGPathMoveToPoint = cg.func(
+    'void CGPathMoveToPoint(void *path, const void *transform, double x, double y)',
+  );
+  const CGPathAddLineToPoint = cg.func(
+    'void CGPathAddLineToPoint(void *path, const void *transform, double x, double y)',
+  );
+  const CGPathCloseSubpath = cg.func('void CGPathCloseSubpath(void *path)');
+
+  // --- Objective-C runtime (for the floating "agent cursor" arrow) ---
   const objc = koffi.load('/usr/lib/libobjc.A.dylib');
   const objc_getClass = objc.func('void * objc_getClass(const char *name)');
   const sel_registerName = objc.func('void * sel_registerName(const char *name)');
@@ -144,6 +156,7 @@ async function initNative() {
   const msgPoint = objc.func('void objc_msgSend(void *o, void *s, CGPoint p)');
   const msgDate = objc.func('void * objc_msgSend(void *o, void *s, double ti)');
   const msgBoolRet = objc.func('bool objc_msgSend(void *o, void *s, void *date)');
+  const msgRect = objc.func('void objc_msgSend(void *o, void *s, CGRect r)');
   const sel = sel_registerName;
 
   // --- CoreFoundation ---
@@ -330,7 +343,9 @@ async function initNative() {
     msgBoolRet(rl, sel('runUntilDate:'), date);
   }
 
-  // Floating, click-through, circular "agent cursor" dot (created lazily once).
+  // Floating, click-through "agent cursor" arrow (created lazily once): a blue
+  // pointer with a white outline, ~2x the system cursor, 90% opaque, with the
+  // arrow tip exactly on the action point.
   let agentCursor = null;
   function ensureAgentCursor() {
     if (agentCursor) return agentCursor;
@@ -338,7 +353,9 @@ async function initNative() {
     const app = msg0(NSApplication, sel('sharedApplication'));
     msgInt(app, sel('setActivationPolicy:'), 1 /* accessory */);
     const NSWindow = objc_getClass('NSWindow');
-    const SIZE = 24;
+    const ARROW = 48; // ~2x the ~24pt system cursor
+    const PAD = 4; // margin so the white outline is not clipped
+    const SIZE = ARROW + PAD * 2;
     const win = msgInitWindow(
       msg0(NSWindow, sel('alloc')),
       sel('initWithContentRect:styleMask:backing:defer:'),
@@ -354,10 +371,44 @@ async function initNative() {
     const contentView = msg0(win, sel('contentView'));
     msgBool(contentView, sel('setWantsLayer:'), true);
     const layer = msg0(contentView, sel('layer'));
-    msgDbl(layer, sel('setCornerRadius:'), SIZE / 2);
-    const color = CGColorCreateGenericRGB(1.0, 0.35, 0.0, 0.92); // bright orange
-    msgVoidPtr(layer, sel('setBackgroundColor:'), color);
-    CFRelease(color);
+
+    // Arrow outline in a 48pt square (tip at origin, tail toward bottom-right,
+    // top-left origin with y down). Converted to the layer's y-up space below.
+    const pts = [
+      [0, 0],
+      [0, 48],
+      [12, 34],
+      [22, 48],
+      [36, 34],
+      [48, 48],
+      [48, 10],
+      [34, 22],
+      [48, 0],
+    ];
+    const path = CGPathCreateMutable();
+    CGPathMoveToPoint(path, null, PAD + pts[0][0], PAD + (ARROW - pts[0][1]));
+    for (let i = 1; i < pts.length; i++) {
+      CGPathAddLineToPoint(path, null, PAD + pts[i][0], PAD + (ARROW - pts[i][1]));
+    }
+    CGPathCloseSubpath(path);
+
+    const CAShapeLayer = objc_getClass('CAShapeLayer');
+    const shape = msg0(CAShapeLayer, sel('layer'));
+    msgRect(shape, sel('setBounds:'), {
+      origin: { x: 0, y: 0 },
+      size: { width: SIZE, height: SIZE },
+    });
+    msgPoint(shape, sel('setPosition:'), { x: SIZE / 2, y: SIZE / 2 });
+    msgVoidPtr(shape, sel('setPath:'), path);
+    const fill = CGColorCreateGenericRGB(0.12, 0.5, 1.0, 0.9); // blue
+    const stroke = CGColorCreateGenericRGB(1.0, 1.0, 1.0, 0.9); // white
+    msgVoidPtr(shape, sel('setFillColor:'), fill);
+    msgVoidPtr(shape, sel('setStrokeColor:'), stroke);
+    msgDbl(shape, sel('setLineWidth:'), 2.5);
+    msgVoidPtr(layer, sel('addSublayer:'), shape);
+    CFRelease(fill);
+    CFRelease(stroke);
+    CFRelease(path); // the shape layer retained its own reference
     // Last shown target (top-left point); null when hidden, so the first show
     // after a hide appears in place and later shows slide from the previous one.
     let agentCursorPos = null;
@@ -368,13 +419,13 @@ async function initNative() {
         const from = agentCursorPos ?? { x, y };
         agentCursorPos = { x, y };
         const H = mainDisplayBounds().height;
-        const half = SIZE / 2;
         for (let i = 1; i <= ANIM_STEPS; i++) {
           const t = i / ANIM_STEPS;
           const cx = from.x + (x - from.x) * t;
           const cy = from.y + (y - from.y) * t;
+          // The tip is PAD from the window's top-left; place it on the target.
           // setFrameOrigin: uses Cocoa bottom-left origin, so flip the y axis.
-          msgPoint(win, sel('setFrameOrigin:'), { x: cx - half, y: H - cy - half });
+          msgPoint(win, sel('setFrameOrigin:'), { x: cx - PAD, y: H - cy + PAD - SIZE });
           if (i === 1) msgVoidPtr(win, sel('orderFront:'), null);
           pumpRunLoop(ANIM_STEP_MS);
         }
@@ -389,7 +440,7 @@ async function initNative() {
     return agentCursor;
   }
 
-  // Hide the agent-cursor dot once the agent finishes its whole task.
+  // Hide the agent-cursor arrow once the agent finishes its whole task.
   function hideAgentCursor() {
     if (agentCursor) agentCursor.hide();
   }
@@ -399,7 +450,7 @@ async function initNative() {
   }
 
   // Run a mouse action: in virtual mode, save the real cursor, show the agent
-  // dot, run the action, then restore the real cursor. Global CGEventPost is
+  // arrow, run the action, then restore the real cursor. Global CGEventPost is
   // used because it delivers clicks reliably (posting to a PID is unreliable
   // for mouse hit-testing).
   async function withCursorRestore(x, y, virtual, action) {
@@ -699,7 +750,7 @@ async function captureScreenshot({ bounds, windowId, displayId }) {
 function apply(ctx, config) {
   const resolved = config;
 
-  // Hide the agent-cursor dot once the agent finishes its whole turn/task
+  // Hide the agent-cursor arrow once the agent finishes its whole turn/task
   // (status transitions to "idle"), so it doesn't linger between prompts.
   ctx.on(
     'agent/status',

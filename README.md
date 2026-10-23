@@ -28,8 +28,8 @@ and accessibility grants. `dsh-mac-use` doesn't:
   host (a child of the Electron app), macOS checks Screen Recording and Accessibility
   against _DeepSeek Harness_. Grant those two once — never to a helper.
 - **Virtual agent cursor.** Mouse actions don't strand your real pointer: clicks land,
-  then your cursor snaps back, while a floating orange dot glides between action points so
-  you can watch the agent work — and it disappears when the task is done.
+  then your cursor snaps back, while a blue arrow (white outline, ~2x size) glides between
+  action points with its tip on the exact target — and it disappears when the task is done.
 
 ## Tools
 
@@ -101,12 +101,12 @@ y = bounds.y + py / scale
 
 ## Configuration
 
-| Field           | Default | Meaning                                                                                                                                       |
-| --------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `virtualCursor` | `true`  | Use the virtual agent cursor (click, then restore your pointer) and show the floating dot. Set `false` to leave the pointer where it clicked. |
-| `postDelayMs`   | `25`    | Delay between press/release events.                                                                                                           |
-| `scrollAmount`  | `3`     | Scroll wheel units per step.                                                                                                                  |
-| `typeDelayMs`   | `0`     | Per-character typing delay.                                                                                                                   |
+| Field           | Default | Meaning                                                                                                                                     |
+| --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `virtualCursor` | `true`  | Use the virtual agent cursor (click, then restore your pointer) and show the blue arrow. Set `false` to leave the pointer where it clicked. |
+| `postDelayMs`   | `25`    | Delay between press/release events.                                                                                                         |
+| `scrollAmount`  | `3`     | Scroll wheel units per step.                                                                                                                |
+| `typeDelayMs`   | `0`     | Per-character typing delay.                                                                                                                 |
 
 ## Security
 
