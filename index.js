@@ -593,6 +593,16 @@ async function initNative() {
     f10: 109,
     f11: 103,
     f12: 111,
+    // Modifier keys (needed so computer_key can physically press/release them).
+    cmd: 55,
+    command: 55,
+    meta: 55,
+    super: 55,
+    shift: 56,
+    option: 58,
+    alt: 58,
+    control: 59,
+    ctrl: 59,
   };
 
   const MODIFIER = {
@@ -624,37 +634,25 @@ async function initNative() {
     let flags = 0;
     for (const m of modifiers) flags |= MODIFIER[m];
 
-    // Hold modifiers.
-    for (const m of modifiers) {
-      keyPress(KEYCODE[m] ?? 0, 0, true);
+    // Press all modifiers down (physical).
+    for (const m of modifiers) keyPress(KEYCODE[m], 0, true);
+
+    // Press and release each regular key.
+    for (const k of others) {
+      const keycode = KEYCODE[k];
+      if (keycode === undefined) {
+        // Release held modifiers before failing.
+        for (const m of modifiers) keyPress(KEYCODE[m], 0, false);
+        throw new Error(`computer_key: unknown key "${k}". Use computer_type for arbitrary text.`);
+      }
+      keyPress(keycode, flags, true);
+      await sleep(delayMs);
+      keyPress(keycode, flags, false);
+      await sleep(delayMs);
     }
 
-    if (others.length > 0) {
-      for (const k of others) {
-        const keycode = KEYCODE[k];
-        if (keycode === undefined) {
-          // Release held modifiers before failing.
-          for (const m of modifiers) keyPress(KEYCODE[m] ?? 0, 0, false);
-          throw new Error(
-            `computer_key: unknown key "${k}". Use computer_type for arbitrary text.`,
-          );
-        }
-        keyPress(keycode, flags, true);
-        await sleep(delayMs);
-        keyPress(keycode, flags, false);
-        await sleep(delayMs);
-      }
-    } else {
-      // A modifier chord with no regular key: tap each modifier.
-      for (const m of modifiers) {
-        keyPress(KEYCODE[m] ?? 0, 0, true);
-        await sleep(delayMs);
-        keyPress(KEYCODE[m] ?? 0, 0, false);
-      }
-    }
-
-    // Release modifiers.
-    for (const m of modifiers) keyPress(KEYCODE[m] ?? 0, 0, false);
+    // Release all modifiers (a modifier-only chord becomes a single tap).
+    for (const m of modifiers) keyPress(KEYCODE[m], 0, false);
   }
 
   return {
