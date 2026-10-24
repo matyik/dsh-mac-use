@@ -368,6 +368,10 @@ async function initNative() {
     msgBool(win, sel('setOpaque:'), false);
     msgBool(win, sel('setIgnoresMouseEvents:'), true);
     msgBool(win, sel('setHasShadow:'), false);
+    // A borderless NSWindow still paints its default background unless cleared,
+    // which otherwise shows as a dark box behind the arrow.
+    const NSColor = objc_getClass('NSColor');
+    msgVoidPtr(win, sel('setBackgroundColor:'), msg0(NSColor, sel('clearColor')));
     const contentView = msg0(win, sel('contentView'));
     msgBool(contentView, sel('setWantsLayer:'), true);
     const layer = msg0(contentView, sel('layer'));
