@@ -2,8 +2,9 @@
  * dsh-mac-use
  *
  * A DeepSeek Harness Host plugin that gives an agent a computer-use toolset for
- * macOS: it captures the screen, reads the display/window geometry, moves and
- * clicks the mouse, scrolls, types, presses keys, and opens apps and URLs.
+ * macOS: it captures the screen, reads the display/window geometry and the
+ * Accessibility (AX) UI tree as text, moves and clicks the mouse, scrolls,
+ * types, presses keys, and opens apps and URLs.
  *
  * Screen capture runs through the bundled macOS `screencapture` tool (with the
  * cursor included); display/window inspection and mouse/keyboard input call
@@ -14,32 +15,46 @@
  */
 
 import { execFile } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import z from '@deepseek-ai/schemastery';
-import { defineTool } from '@deepseek-ai/dsh-tools';
+
+// Peer dependencies are provided by the DeepSeek Harness host at runtime. They
+// are imported dynamically (not statically) so that dev scripts such as
+// scripts/ax-smoke.mjs can import this module outside the host — where those
+// packages are absent — and still reach the exported Accessibility walker.
+let z = null;
+let defineTool = null;
+try {
+  z = (await import('@deepseek-ai/schemastery')).default;
+  defineTool = (await import('@deepseek-ai/dsh-tools')).defineTool;
+} catch {
+  // Host peer dependencies are unavailable; only the AX walker works here.
+}
 
 const execFileAsync = promisify(execFile);
 
 const name = 'tool-mac-use';
 const inject = ['tools'];
 
-const Config = z.object({
-  // Delay between paired press/release events (down/up) for reliability.
-  postDelayMs: z.number().min(0).max(2000).default(25),
-  // Number of scroll "wheel" units per scroll step.
-  scrollAmount: z.number().min(1).max(200).default(3),
-  // Per-character delay while typing (0 = as fast as possible).
-  typeDelayMs: z.number().min(0).max(200).default(0),
-  // When true, mouse actions are delivered via the global HID tap (reliable
-  // clicks), then the real cursor is restored to where it was, and a floating
-  // "agent cursor" arrow is shown at the action point. When false, the system
-  // cursor simply moves to each position. Keyboard input always goes to the
-  // focused app.
-  virtualCursor: z.boolean().default(true),
-});
+const Config = z
+  ? z.object({
+      // Delay between paired press/release events (down/up) for reliability.
+      postDelayMs: z.number().min(0).max(2000).default(25),
+      // Number of scroll "wheel" units per scroll step.
+      scrollAmount: z.number().min(1).max(200).default(3),
+      // Per-character delay while typing (0 = as fast as possible).
+      typeDelayMs: z.number().min(0).max(200).default(0),
+      // When true, mouse actions are delivered via the global HID tap (reliable
+      // clicks), then the real cursor is restored to where it was, and a floating
+      // "agent cursor" arrow is shown at the action point. When false, the system
+      // cursor simply moves to each position. Keyboard input always goes to the
+      // focused app.
+      virtualCursor: z.boolean().default(true),
+    })
+  : undefined;
 
 // ---------------------------------------------------------------------------
 // Native (macOS) layer, initialised lazily on first use.
@@ -86,6 +101,9 @@ async function initNative() {
   pointerType('CFNumberRef', koffi.opaque());
   pointerType('CFDictionaryRef', koffi.opaque());
   pointerType('CFArrayRef', koffi.opaque());
+  pointerType('CFTypeRef', koffi.opaque());
+  pointerType('AXUIElementRef', koffi.opaque());
+  pointerType('AXValueRef', koffi.opaque());
   pointerType('CGEventRef', koffi.opaque());
   pointerType('CGEventSourceRef', koffi.opaque());
 
@@ -157,6 +175,8 @@ async function initNative() {
   const msgDate = objc.func('void * objc_msgSend(void *o, void *s, double ti)');
   const msgBoolRet = objc.func('bool objc_msgSend(void *o, void *s, void *date)');
   const msgRect = objc.func('void objc_msgSend(void *o, void *s, CGRect r)');
+  const msgIntRet = objc.func('int64_t objc_msgSend(void *o, void *s)');
+  const msgIdInt = objc.func('void * objc_msgSend(void *o, void *s, int64_t v)');
   const sel = sel_registerName;
 
   // --- CoreFoundation ---
@@ -226,6 +246,324 @@ async function initNative() {
     if (!cfnum) return 0;
     const out = new Int32Array(1);
     return CFNumberGetValue(cfnum, kCFNumberSInt32Type, out) ? out[0] : 0;
+  }
+
+  // --- Accessibility: read-only UI snapshot ---------------------------------
+  //
+  // One tree walk turns an app's AX hierarchy into compact text. This is Phase
+  // 1 — perception only: no AXUIElementPerformAction, no cursor movement, no
+  // screen capture. Each emitted node's AXUIElementRef is retained in an LRU
+  // cache keyed by snapshotId so a later phase can act on [ref]s unchanged.
+
+  structType('CFRange', { location: 'int64', length: 'int64' });
+
+  const AXUIElementCreateApplication = appSvc.func(
+    'AXUIElementRef AXUIElementCreateApplication(int32_t pid)',
+  );
+  const AXUIElementCopyAttributeValue = appSvc.func(
+    'int32_t AXUIElementCopyAttributeValue(AXUIElementRef el, CFStringRef attr, _Out_ CFTypeRef *out)',
+  );
+  const AXUIElementSetMessagingTimeout = appSvc.func(
+    'int32_t AXUIElementSetMessagingTimeout(AXUIElementRef el, float seconds)',
+  );
+  const AXUIElementGetTypeID = appSvc.func('uint64_t AXUIElementGetTypeID()');
+  const AXValueGetTypeID = appSvc.func('uint64_t AXValueGetTypeID()');
+  const AXValueGetValue = appSvc.func(
+    'bool AXValueGetValue(AXValueRef value, int32_t type, void *out)',
+  );
+  const CFGetTypeID = cf.func('uint64_t CFGetTypeID(CFTypeRef cf)');
+  const CFStringGetTypeID = cf.func('uint64_t CFStringGetTypeID()');
+  const CFArrayGetTypeID = cf.func('uint64_t CFArrayGetTypeID()');
+  const CFStringGetCharacters = cf.func(
+    'void CFStringGetCharacters(CFStringRef str, CFRange range, uint16_t *buffer)',
+  );
+  const CFRetain = cf.func('CFTypeRef CFRetain(CFTypeRef cf)');
+
+  const AX_SUCCESS = 0;
+  const kAXValueCGPointType = 1;
+  const kAXValueCGSizeType = 2;
+
+  const cfStringTypeId = Number(CFStringGetTypeID());
+  const cfArrayTypeId = Number(CFArrayGetTypeID());
+  const axElementTypeId = Number(AXUIElementGetTypeID());
+  const axValueTypeId = Number(AXValueGetTypeID());
+
+  // Cached CFString keys for AX attributes, in the same style as KEY.
+  const AX_ATTR = {
+    role: cfStr('AXRole'),
+    subrole: cfStr('AXSubrole'),
+    title: cfStr('AXTitle'),
+    description: cfStr('AXDescription'),
+    value: cfStr('AXValue'),
+    position: cfStr('AXPosition'),
+    size: cfStr('AXSize'),
+    children: cfStr('AXChildren'),
+    focused: cfStr('AXFocused'),
+  };
+
+  // Read at most `max` UTF-16 units of a CFString without buffering the whole
+  // thing (AXValue on a text area can be megabytes).
+  function cfStringToJsLimit(cfstr, max) {
+    if (!cfstr) return '';
+    const len = Number(CFStringGetLength(cfstr));
+    if (len === 0) return '';
+    const n = Math.min(len, max);
+    const buf = Buffer.alloc(n * 2);
+    CFStringGetCharacters(cfstr, { location: 0, length: n }, buf);
+    return buf.toString('utf16le');
+  }
+
+  function axCopy(el, attr) {
+    const out = [null];
+    const err = AXUIElementCopyAttributeValue(el, attr, out);
+    return err === AX_SUCCESS ? out[0] : null;
+  }
+
+  function axString(el, attr) {
+    const v = axCopy(el, attr);
+    if (!v) return '';
+    try {
+      return CFGetTypeID(v) === cfStringTypeId ? cfStringToJsLimit(v, 160) : '';
+    } finally {
+      CFRelease(v);
+    }
+  }
+
+  function axPoint(el) {
+    const v = axCopy(el, AX_ATTR.position);
+    if (!v) return null;
+    try {
+      if (CFGetTypeID(v) !== axValueTypeId) return null;
+      const buf = new Float64Array(2);
+      return AXValueGetValue(v, kAXValueCGPointType, buf) ? { x: buf[0], y: buf[1] } : null;
+    } finally {
+      CFRelease(v);
+    }
+  }
+
+  function axSize(el) {
+    const v = axCopy(el, AX_ATTR.size);
+    if (!v) return null;
+    try {
+      if (CFGetTypeID(v) !== axValueTypeId) return null;
+      const buf = new Float64Array(2);
+      return AXValueGetValue(v, kAXValueCGSizeType, buf) ? { width: buf[0], height: buf[1] } : null;
+    } finally {
+      CFRelease(v);
+    }
+  }
+
+  function resolveRunningApp(appName) {
+    const ws = msg0(objc_getClass('NSWorkspace'), sel('sharedWorkspace'));
+    if (!appName) {
+      const front = msg0(ws, sel('frontmostApplication'));
+      if (!front) throw new Error('computer_ax_snapshot: no frontmost application.');
+      return {
+        pid: Number(msgIntRet(front, sel('processIdentifier'))),
+        name: cfStringToJs(msg0(front, sel('localizedName'))),
+      };
+    }
+    const target = String(appName);
+    const apps = msg0(ws, sel('runningApplications'));
+    const count = Number(msgIntRet(apps, sel('count')));
+    const matches = [];
+    for (let i = 0; i < count; i++) {
+      const running = msgIdInt(apps, sel('objectAtIndex:'), i);
+      const bundleId = cfStringToJs(msg0(running, sel('bundleIdentifier')));
+      const localizedName = cfStringToJs(msg0(running, sel('localizedName')));
+      if (bundleId === target || localizedName === target) {
+        matches.push({
+          pid: Number(msgIntRet(running, sel('processIdentifier'))),
+          name: localizedName,
+        });
+      }
+    }
+    if (matches.length === 0) {
+      throw new Error(
+        `computer_ax_snapshot: no running application matches "${target}". ` +
+          'Use its localized name (e.g. "Notes") or bundle id (e.g. "com.apple.Notes").',
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `computer_ax_snapshot: "${target}" is ambiguous (${matches.length} matches). Use a bundle id.`,
+      );
+    }
+    return matches[0];
+  }
+
+  // LRU cache of retained AXUIElementRefs keyed by snapshotId, for Phase 2.
+  const snapshotCache = new Map(); // snapshotId -> { refs: Map<ref, AXUIElementRef>, at: ms }
+  const SNAPSHOT_CACHE_LIMIT = 3;
+
+  function cacheSnapshot(snapshotId, refs) {
+    snapshotCache.set(snapshotId, { refs, at: Date.now() });
+    while (snapshotCache.size > SNAPSHOT_CACHE_LIMIT) {
+      let oldestId = null;
+      let oldestAt = Infinity;
+      for (const [id, entry] of snapshotCache) {
+        if (entry.at < oldestAt) {
+          oldestAt = entry.at;
+          oldestId = id;
+        }
+      }
+      const evicted = snapshotCache.get(oldestId);
+      snapshotCache.delete(oldestId);
+      for (const el of evicted.refs.values()) CFRelease(el);
+    }
+  }
+
+  const AX_DEADLINE_MS = 1500;
+  const AX_MESSAGING_TIMEOUT = 0.5;
+  // Reserve room for the truncation footer so the returned text never exceeds maxChars.
+  const FOOTER_RESERVE = 80;
+
+  function axSnapshot({ app, maxDepth, maxNodes, maxChars }) {
+    const depthCap = Math.max(1, Math.min(20, maxDepth ?? 8));
+    const nodeCap = Math.max(1, Math.min(2000, maxNodes ?? 300));
+    const charCap = Math.max(1, maxChars ?? 12000);
+
+    const appInfo = resolveRunningApp(app);
+    const appEl = AXUIElementCreateApplication(appInfo.pid);
+    if (!appEl) {
+      throw new Error(
+        `computer_ax_snapshot: cannot create an AX element for "${appInfo.name}" (pid ${appInfo.pid}).`,
+      );
+    }
+
+    const snapshotId = `ax_${randomBytes(3).toString('hex')}`;
+    const refs = new Map(); // ref index -> retained AXUIElementRef
+    const lines = [];
+    let visited = 0;
+    let emitted = 0;
+    let textLen = 0;
+    let pending = 1; // discovered-but-not-shown nodes, for the truncation footer
+    let truncated = false;
+    let stopped = false;
+    const deadline = Date.now() + AX_DEADLINE_MS;
+
+    // Checked before every AX call so a single unresponsive element cannot
+    // block past the deadline (each call is bounded by the messaging timeout).
+    function overDeadline() {
+      if (Date.now() > deadline) {
+        stopped = true;
+        truncated = true;
+        return true;
+      }
+      return false;
+    }
+
+    function escapeLabel(s) {
+      return s.replace(/\r/g, '\\r').replace(/\n/g, '\\n');
+    }
+
+    function walk(el, depth) {
+      if (stopped || overDeadline()) return;
+      if (visited >= nodeCap) {
+        stopped = true;
+        truncated = true;
+        return;
+      }
+      pending -= 1;
+      visited += 1;
+
+      AXUIElementSetMessagingTimeout(el, AX_MESSAGING_TIMEOUT);
+      if (overDeadline()) return;
+
+      const role = axString(el, AX_ATTR.role) || 'AXUnknown';
+      if (overDeadline()) return;
+
+      const title = axString(el, AX_ATTR.title);
+      if (overDeadline()) return;
+      const label = title || axString(el, AX_ATTR.description);
+      if (overDeadline()) return;
+
+      const value = axString(el, AX_ATTR.value);
+      if (overDeadline()) return;
+
+      const pos = axPoint(el);
+      if (overDeadline()) return;
+      const size = axSize(el);
+      if (overDeadline()) return;
+      const frame =
+        pos && size && size.width > 0 && size.height > 0
+          ? {
+              x: Math.round(pos.x),
+              y: Math.round(pos.y),
+              width: Math.round(size.width),
+              height: Math.round(size.height),
+            }
+          : null;
+
+      const noisy =
+        (role === 'AXGroup' || role === 'AXGenericGroup' || role === 'AXUnknown') &&
+        !label &&
+        !value;
+
+      if (!noisy) {
+        let line = `[${emitted}] ${role}`;
+        if (label) line += ` "${escapeLabel(label)}"`;
+        if (value) line += ` value="${escapeLabel(value)}"`;
+        if (frame) line += ` @{${frame.x},${frame.y},${frame.width},${frame.height}}`;
+
+        if (textLen + (textLen ? 1 : 0) + line.length > Math.max(1, charCap - FOOTER_RESERVE)) {
+          stopped = true;
+          truncated = true;
+          pending += 1;
+          return;
+        }
+        CFRetain(el);
+        refs.set(emitted, el);
+        lines.push(line);
+        textLen += (textLen ? 1 : 0) + line.length;
+        emitted += 1;
+      }
+
+      if (depth >= depthCap) return;
+
+      if (overDeadline()) return;
+      const kidsOut = [null];
+      const kidsErr = AXUIElementCopyAttributeValue(el, AX_ATTR.children, kidsOut);
+      const kids = kidsErr === AX_SUCCESS ? kidsOut[0] : null;
+      if (kids && CFGetTypeID(kids) === cfArrayTypeId) {
+        try {
+          const count = Number(CFArrayGetCount(kids));
+          pending += count;
+          for (let i = 0; i < count && !stopped; i++) {
+            const child = CFArrayGetValueAtIndex(kids, i);
+            if (child && CFGetTypeID(child) === axElementTypeId) walk(child, depth + 1);
+          }
+        } finally {
+          CFRelease(kids);
+        }
+      } else if (kids) {
+        CFRelease(kids);
+      }
+    }
+
+    try {
+      walk(appEl, 0);
+    } finally {
+      CFRelease(appEl); // release the Create reference; the cache holds its own retain
+    }
+
+    let text = lines.join('\n');
+    if (truncated) {
+      const more = Math.max(1, pending);
+      text += `\n… ${more} more nodes not shown (raise maxNodes, or narrow with app)`;
+    }
+
+    cacheSnapshot(snapshotId, refs);
+
+    return {
+      snapshotId,
+      app: { pid: appInfo.pid, name: appInfo.name },
+      count: visited,
+      returned: emitted,
+      truncated,
+      chars: text.length,
+      text,
+    };
   }
 
   function getDisplays() {
@@ -663,6 +1001,7 @@ async function initNative() {
     cursorLocation,
     mainDisplayBounds,
     hideAgentCursor,
+    axSnapshot,
     move,
     click,
     drag,
@@ -701,6 +1040,13 @@ function accessibilityError() {
     'Mouse and keyboard control is blocked: the DeepSeek Harness app does not have Accessibility permission. ' +
       'Open System Settings → Privacy & Security → Accessibility, enable "DeepSeek Harness", then quit and reopen the app.',
   );
+}
+
+// Exported for scripts/ax-smoke.mjs and reused by the computer_ax_snapshot tool.
+async function axSnapshot(opts = {}) {
+  const n = requireNative(await getNative());
+  if (!n.isTrusted()) throw accessibilityError();
+  return n.axSnapshot(opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +1144,70 @@ function apply(ctx, config) {
           cursor: n.cursorLocation(),
           windows: n.listWindows(),
         };
+      },
+    }),
+  );
+
+  ctx.tools.register(
+    defineTool({
+      name: 'computer_ax_snapshot',
+      description:
+        'Read the macOS Accessibility (AX) UI tree of an app as compact text, instead of taking a screenshot. ' +
+        'Returns the element hierarchy with roles, titles/descriptions, text values, and screen-coordinate frames, each prefixed by an integer [ref]. ' +
+        'Costs far fewer tokens than a screenshot and works with text-only models. Read-only: it never moves the cursor or clicks. ' +
+        'Target an app by localized name or bundle id, or omit `app` for the frontmost app.',
+      parameters: {
+        app: {
+          type: 'string',
+          description: 'Target app by localized name or bundle id. Defaults to the frontmost app.',
+        },
+        maxDepth: {
+          type: 'integer',
+          description: 'Maximum tree depth to walk (1-20). Default 8.',
+        },
+        maxNodes: {
+          type: 'integer',
+          description: 'Maximum nodes to visit (1-2000). Default 300.',
+        },
+        maxChars: {
+          type: 'integer',
+          description: 'Hard cap on the returned text length. Default 12000.',
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            snapshotId: { type: 'string' },
+            app: {
+              type: 'object',
+              additionalProperties: false,
+              properties: { pid: { type: 'integer' }, name: { type: 'string' } },
+            },
+            count: { type: 'integer' },
+            returned: { type: 'integer' },
+            truncated: { type: 'boolean' },
+            chars: { type: 'integer' },
+            text: { type: 'string' },
+          },
+        },
+        render: (_args, value) => {
+          const meta =
+            `AX snapshot ${value.snapshotId} · ${value.app.name} (pid ${value.app.pid}) · ` +
+            `${value.returned}/${value.count} nodes · ${value.chars} chars` +
+            `${value.truncated ? ' · truncated' : ''}`;
+          return [{ type: 'text', text: `${meta}\n${value.text}` }];
+        },
+      },
+      isConcurrencySafe: () => true,
+      async execute(args) {
+        return axSnapshot({
+          app: args.app,
+          maxDepth: args.maxDepth ?? 8,
+          maxNodes: args.maxNodes ?? 300,
+          maxChars: args.maxChars ?? 12000,
+        });
       },
     }),
   );
@@ -1175,8 +1585,8 @@ function apply(ctx, config) {
       name: 'computer-use',
       order,
       text:
-        'You have a computer-use toolset that can see and control the macOS desktop and browser (computer_screenshot, computer_screen_info, computer_move, computer_click, computer_drag, computer_scroll, computer_type, computer_key, computer_open).\n' +
-        'Workflow: (1) call computer_screen_info or computer_screenshot to observe the current state; (2) identify the target element in the image; (3) convert image pixels to global points using the scale and bounds returned by computer_screenshot; (4) act with mouse/keyboard; (5) take another screenshot to verify the result.\n' +
+        'You have a computer-use toolset that can see and control the macOS desktop and browser (computer_screenshot, computer_screen_info, computer_ax_snapshot, computer_move, computer_click, computer_drag, computer_scroll, computer_type, computer_key, computer_open).\n' +
+        'Workflow: (1) observe the current state — prefer computer_ax_snapshot for a cheap, text-only UI tree (works without vision), or computer_screen_info/computer_screenshot; (2) identify the target element and its screen coordinates; (3) act with mouse/keyboard; (4) verify with another snapshot or screenshot.\n' +
         'All mouse coordinates are global display points with the origin at the top-left of the main display; do not mix them up with image pixels.\n' +
         'Mouse actions use a floating "agent cursor" and do not move the user\'s real pointer; keyboard input still goes to the focused app, so use computer_open to launch/focus the app you need to type into.\n' +
         'These tools control the real desktop, so act deliberately, re-check after each step, and undo mistakes where possible.',
@@ -1184,4 +1594,4 @@ function apply(ctx, config) {
   });
 }
 
-export { Config, apply, inject, name };
+export { Config, apply, inject, name, axSnapshot };

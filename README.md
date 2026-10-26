@@ -33,26 +33,62 @@ and accessibility grants. `dsh-mac-use` doesn't:
 
 ## Tools
 
-| Tool                   | What it does                                                                                                                |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `computer_screenshot`  | Capture the screen (main display, a region, a window, or a display) and return the image plus bounds and pixel→point scale. |
-| `computer_screen_info` | Read display geometry (points), cursor position, and the on-screen window list (id, app, title, bounds).                    |
-| `computer_move`        | Move the **agent cursor** to `(x, y)` in global display points (your real pointer is untouched).                            |
-| `computer_click`       | Click at `(x, y)` — left/right/middle, single or double.                                                                    |
-| `computer_drag`        | Drag from `(x1, y1)` to `(x2, y2)`.                                                                                         |
-| `computer_scroll`      | Scroll up/down/left/right at a point or the cursor.                                                                         |
-| `computer_type`        | Type arbitrary Unicode text into the focused field.                                                                         |
-| `computer_key`         | Press a key or chord (letters, digits, arrows, return, tab, escape, F-keys, and `cmd`/`shift`/`option`/`control`).          |
-| `computer_open`        | Open a URL, file, or app via the system `open` command.                                                                     |
+| Tool                   | What it does                                                                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `computer_screenshot`  | Capture the screen (main display, a region, a window, or a display) and return the image plus bounds and pixel→point scale.                   |
+| `computer_screen_info` | Read display geometry (points), cursor position, and the on-screen window list (id, app, title, bounds).                                      |
+| `computer_ax_snapshot` | Read an app's Accessibility (AX) UI tree as compact text — roles, titles, values, and screen-coordinate frames, each with an integer `[ref]`. |
+| `computer_move`        | Move the **agent cursor** to `(x, y)` in global display points (your real pointer is untouched).                                              |
+| `computer_click`       | Click at `(x, y)` — left/right/middle, single or double.                                                                                      |
+| `computer_drag`        | Drag from `(x1, y1)` to `(x2, y2)`.                                                                                                           |
+| `computer_scroll`      | Scroll up/down/left/right at a point or the cursor.                                                                                           |
+| `computer_type`        | Type arbitrary Unicode text into the focused field.                                                                                           |
+| `computer_key`         | Press a key or chord (letters, digits, arrows, return, tab, escape, F-keys, and `cmd`/`shift`/`option`/`control`).                            |
+| `computer_open`        | Open a URL, file, or app via the system `open` command.                                                                                       |
 
 A system-prompt section teaches the agent the workflow: observe → locate → convert image
 pixels to global points → act → screenshot again to verify.
+
+## Accessibility snapshots
+
+`computer_ax_snapshot` reads a macOS app's Accessibility (AX) element tree as compact
+text instead of an image. One window costs a few hundred tokens — versus ~1,500 for a
+screenshot — and works with text-only models, which can read the hierarchy directly and
+pick the `[ref]` to act on next.
+
+```text
+[0] AXApplication "Notes"
+  [1] AXWindow "All Notes" @{0,25,280,875}
+    [2] AXButton "New Note" @{120,60,24,24}
+    [3] AXOutline @{0,90,280,810}
+      [4] AXRow "Groceries" @{0,90,280,28}
+      [5] AXTextField "Search" value="milk" @{40,40,200,24}
+```
+
+- **Cheap and text-only.** A snapshot is a few hundred tokens and readable by any model —
+  no vision required.
+- **Screen coordinates.** Each `@{x,y,w,h}` frame is in global display points, top-left
+  origin — the same space as `computer_move` / `computer_click`.
+- **Refs.** The `[n]` index on each line is stable for that snapshot; a later phase will
+  accept a ref to act on the element directly.
+- **Bounded.** It walks to `maxDepth` (default 8), visits up to `maxNodes` (default 300)
+  nodes, caps the text at `maxChars` (default 12,000), and stops after ~1.5 s so an
+  unresponsive app can't freeze the agent. When it stops early, `truncated` is `true` and
+  the text ends with a `… N more nodes not shown` line.
+
+To target an app by name or bundle id:
+
+```js
+computer_ax_snapshot({ app: 'Notes', maxNodes: 300 });
+// -> { snapshotId: 'ax_…', app: { pid, name }, count, returned, truncated, chars, text }
+```
 
 ## Requirements
 
 - **DeepSeek Harness Desktop** (the macOS app), running on macOS (Apple Silicon).
 - A **vision-capable model** for full observe-and-act (e.g. `deepseek-flash`, which reads
-  images). Text-only models can still use `computer_screen_info` and the action tools.
+  images). Text-only models can still use `computer_ax_snapshot`, `computer_screen_info`,
+  and the action tools.
 
 ### Permissions (once)
 

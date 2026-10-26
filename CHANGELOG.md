@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `computer_ax_snapshot`: read-only Accessibility (AX) UI tree as compact text, with
+  roles, titles, values, and screen-coordinate frames per node plus a stable integer
+  `[ref]` for each. Read-only (Phase 1 — no acting on elements yet), bounded by
+  `maxDepth`/`maxNodes`/`maxChars` and a ~1.5 s wall-clock deadline so an unresponsive
+  app can't freeze the agent. Emitted elements are retained in an LRU cache keyed by
+  snapshot id for a later action phase.
+- `scripts/ax-smoke.mjs` dev script to print a snapshot from the Electron host.
+
 ## [0.1.3] - 2026-10-23
 
 ### Fixed
