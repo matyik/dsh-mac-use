@@ -44,6 +44,10 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      - name: Install dependencies
+        if: steps.check.outputs.released == 'false'
+        run: npm install --ignore-scripts --no-audit --no-fund
+
       - name: Publish to npm (trusted publishing, OIDC)
         if: steps.check.outputs.released == 'false'
         run: npm publish --provenance
