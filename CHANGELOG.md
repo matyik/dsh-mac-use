@@ -17,6 +17,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   snapshot id for a later action phase.
 - `scripts/ax-smoke.mjs` dev script to print a snapshot from the Electron host.
 
+## [0.1.4] - 2026-10-25
+
+### Fixed
+
+- Widened the `@deepseek-ai/dsh-tools` peer range from the exact `0.2.0-rc.2` to
+  `^0.2.0-rc.2`, so the plugin installs on DSH `0.2.1-rc.2` and later `0.2.x` runtimes.
+
 ## [0.1.3] - 2026-10-23
 
 ### Fixed
@@ -51,6 +58,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Screen capture via the bundled `screencapture` tool (cursor included).
 - Release automation via GitHub Actions.
 
+[0.1.4]: https://github.com/matyik/dsh-mac-use/releases/tag/v0.1.4
 [0.1.3]: https://github.com/matyik/dsh-mac-use/releases/tag/v0.1.3
 [0.1.2]: https://github.com/matyik/dsh-mac-use/releases/tag/v0.1.2
 [0.1.1]: https://github.com/matyik/dsh-mac-use/releases/tag/v0.1.1
