@@ -1037,7 +1037,7 @@ function screenRecordingError() {
 
 function accessibilityError() {
   return new Error(
-    'Mouse and keyboard control is blocked: the DeepSeek Harness app does not have Accessibility permission. ' +
+    'Accessibility is blocked: the DeepSeek Harness app does not have Accessibility permission. ' +
       'Open System Settings → Privacy & Security → Accessibility, enable "DeepSeek Harness", then quit and reopen the app.',
   );
 }
